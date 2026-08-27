@@ -17,8 +17,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 from groq import Groq
 
-# Импорты для планировщика и пайплайна
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+# Импорты для планировщика (используем BackgroundScheduler)
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from orchestrator.main import Orchestrator
 
@@ -195,15 +195,19 @@ def main():
     application.add_handler(CommandHandler("ideas", ideas))
     application.add_handler(CommandHandler("publish_now", publish_now))
 
-    # --- Настройка планировщика ---
-    scheduler = AsyncIOScheduler()
+    # --- Настройка планировщика (BackgroundScheduler) ---
+    scheduler = BackgroundScheduler()
 
-    # Запускаем пайплайн каждые 4 часа (можно изменить интервал)
+    # Синхронная обёртка для запуска асинхронного пайплайна
+    def run_pipeline_sync():
+        asyncio.run(run_pipeline_wrapper())
+
+    # Запускаем пайплайн каждые 4 часа
     scheduler.add_job(
-        run_pipeline_wrapper,
+        run_pipeline_sync,
         trigger=IntervalTrigger(hours=4),
         id="publish_news",
-        next_run_time=datetime.now() + timedelta(seconds=15)  # первый запуск через 15 секунд
+        next_run_time=datetime.now() + timedelta(seconds=15)
     )
 
     scheduler.start()
