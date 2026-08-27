@@ -1,35 +1,27 @@
-﻿# AI-PULSE DEPENDENCIES
-aiohttp==3.9.1
+﻿# Core
 python-telegram-bot==20.7
 telethon==1.34.0
+
+# AI/ML
 groq==0.4.2
-google-generativeai==0.3.2
-openai==1.10.0
-huggingface-hub==0.20.3
 sentence-transformers==2.2.2
+
+# Web scraping
 feedparser==6.0.10
 beautifulsoup4==4.12.2
 requests==2.31.0
+aiohttp==3.9.1
 praw==7.7.1
+
+# Database (если не используется, можно удалить)
 sqlalchemy==2.0.25
 psycopg2-binary==2.9.9
 alembic==1.13.1
-redis==5.0.1
+pgvector==0.2.4
+
+# Scheduling
 apscheduler==3.10.4
+
+# Utils
 python-dotenv==1.0.0
-pydantic==2.5.3
-pydantic-settings==2.1.0
 loguru==0.7.2
-pytest==7.4.4
-pytest-asyncio==0.21.2
-groq
-python-telegram-bot
-python-dotenv
-requests
-feedparser
-aiohttp
-beautifulsoup4
-apscheduler
-telethon
-praw
-sentence-transformers
