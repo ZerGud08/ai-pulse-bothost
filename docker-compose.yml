@@ -1,0 +1,10 @@
+docker-compose up -d
+@' version: ''3.8''
+
+services: ai-pulse: build: . container_name: ai-pulse-bot depends_on: - postgres - redis env_file: - .env volumes: - ./data:/app/data - ./logs:/app/logs restart: unless-stopped
+
+postgres: image: postgres:16-alpine container_name: ai-pulse-db environment: POSTGRES_USER: ai_pulse POSTGRES_PASSWORD: password POSTGRES_DB: ai_pulse ports: - "5432:5432" volumes: - postgres_data:/var/lib/postgresql/data
+
+redis: image: redis:7-alpine container_name: ai-pulse-redis ports: - "6379:6379"
+
+volumes: postgres_data: '@ | Out-File -FilePath docker-compose.yml -Encoding UTF8

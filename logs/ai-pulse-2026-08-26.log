@@ -1,0 +1,10 @@
+2026-08-26 21:42:21 | INFO     | __main__ - Scout: collecting from 11 sources
+2026-08-26 21:42:21 | ERROR    | __main__ - Error fetching arxiv_ai: Cannot connect to host export.arxiv.org:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')]
+2026-08-26 21:42:22 | SUCCESS  | __main__ - openai_blog: 13 news
+2026-08-26 21:42:22 | SUCCESS  | __main__ - google_ai_blog: 2 news
+2026-08-26 21:42:22 | SUCCESS  | __main__ - deepmind_blog: 2 news
+2026-08-26 21:42:22 | SUCCESS  | __main__ - huggingface_blog: 7 news
+2026-08-26 21:42:22 | SUCCESS  | __main__ - techcrunch_ai: 15 news
+2026-08-26 21:42:22 | SUCCESS  | __main__ - mit_tech_review: 8 news
+2026-08-26 21:42:22 | SUCCESS  | __main__ - reddit_chatgpt: 13 news
+2026-08-26 21:42:22 | INFO     | __main__ - Total collected: 60

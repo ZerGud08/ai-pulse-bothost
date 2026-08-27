@@ -1,0 +1,3 @@
+@' -- AI-PULSE INITIAL MIGRATION CREATE TABLE IF NOT EXISTS raw_news ( id SERIAL PRIMARY KEY, uuid UUID DEFAULT gen_random_uuid() UNIQUE, title TEXT NOT NULL, url TEXT UNIQUE NOT NULL, summary TEXT, source VARCHAR(100), tier VARCHAR(10), published_at TIMESTAMP, collected_at TIMESTAMP DEFAULT NOW(), status VARCHAR(20) DEFAULT ''new'', score FLOAT DEFAULT 0 );
+
+CREATE TABLE IF NOT EXISTS processed_posts ( id SERIAL PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL, source_url TEXT, score FLOAT, status VARCHAR(20) DEFAULT ''pending'', published_at TIMESTAMP, created_at TIMESTAMP DEFAULT NOW() ); '@ | Out-File -FilePath database/migrations/001_initial.sql -Encoding UTF8

@@ -1,0 +1,59 @@
+2026-08-27 09:52:07 | INFO     | agents.publisher - Publisher initialized
+2026-08-27 09:52:07 | INFO     | __main__ - AI-Pulse starting...
+2026-08-27 09:52:07 | INFO     | __main__ - ==================================================
+2026-08-27 09:52:07 | INFO     | __main__ - Pipeline started
+2026-08-27 09:52:07 | INFO     | __main__ - ==================================================
+2026-08-27 09:52:07 | INFO     | __main__ - Stage 1/4: Collecting news...
+2026-08-27 09:52:07 | INFO     | agents.scout - Scout: collecting from 11 sources
+2026-08-27 09:52:08 | ERROR    | agents.scout - Error fetching arxiv_ai: Cannot connect to host export.arxiv.org:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')]
+2026-08-27 09:52:09 | SUCCESS  | agents.scout - openai_blog: 13 news
+2026-08-27 09:52:09 | SUCCESS  | agents.scout - google_ai_blog: 2 news
+2026-08-27 09:52:09 | SUCCESS  | agents.scout - deepmind_blog: 2 news
+2026-08-27 09:52:09 | SUCCESS  | agents.scout - huggingface_blog: 7 news
+2026-08-27 09:52:09 | SUCCESS  | agents.scout - techcrunch_ai: 15 news
+2026-08-27 09:52:09 | SUCCESS  | agents.scout - mit_tech_review: 9 news
+2026-08-27 09:52:09 | SUCCESS  | agents.scout - reddit_ml: 13 news
+2026-08-27 09:52:09 | INFO     | agents.scout - Total collected: 61
+2026-08-27 09:52:09 | INFO     | __main__ - Stage 2/4: Filtering...
+2026-08-27 09:52:09 | INFO     | agents.curator - Curator: 0/61 passed filter
+2026-08-27 09:52:09 | WARNING  | __main__ - No quality news
+2026-08-27 09:52:09 | INFO     | __main__ - AI-Pulse finished
+2026-08-27 09:55:13 | INFO     | agents.publisher - Publisher initialized
+2026-08-27 09:55:13 | INFO     | __main__ - AI-Pulse starting...
+2026-08-27 09:55:13 | INFO     | __main__ - ==================================================
+2026-08-27 09:55:13 | INFO     | __main__ - Pipeline started
+2026-08-27 09:55:13 | INFO     | __main__ - ==================================================
+2026-08-27 09:55:13 | INFO     | __main__ - Stage 1/4: Collecting news...
+2026-08-27 09:55:13 | INFO     | agents.scout - Scout: collecting from 11 sources
+2026-08-27 09:55:13 | ERROR    | agents.scout - Error fetching arxiv_ai: Cannot connect to host export.arxiv.org:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')]
+2026-08-27 09:55:14 | SUCCESS  | agents.scout - openai_blog: 13 news
+2026-08-27 09:55:14 | SUCCESS  | agents.scout - google_ai_blog: 2 news
+2026-08-27 09:55:14 | SUCCESS  | agents.scout - deepmind_blog: 2 news
+2026-08-27 09:55:14 | SUCCESS  | agents.scout - huggingface_blog: 7 news
+2026-08-27 09:55:14 | SUCCESS  | agents.scout - techcrunch_ai: 15 news
+2026-08-27 09:55:14 | SUCCESS  | agents.scout - mit_tech_review: 9 news
+2026-08-27 09:55:14 | SUCCESS  | agents.scout - reddit_chatgpt: 13 news
+2026-08-27 09:55:14 | INFO     | agents.scout - Total collected: 61
+2026-08-27 09:55:14 | INFO     | __main__ - Stage 2/4: Filtering...
+2026-08-27 09:55:14 | INFO     | agents.curator - Curator: 61/61 passed filter
+2026-08-27 09:55:14 | INFO     | __main__ - Curator selected 10 news
+2026-08-27 09:55:14 | INFO     | __main__ - Stage 3/4: Creating content...
+2026-08-27 09:55:14 | INFO     | agents.editor - Editor: created 5 posts
+2026-08-27 09:55:14 | INFO     | __main__ - Stage 4/4: Publishing...
+2026-08-27 09:55:14 | INFO     | agents.publisher - Would publish to @ai_pulse_ai: <b>Learning never stops: How AI makes learning continuous</b>
+
+OpenAI’s new repo
+2026-08-27 09:55:15 | INFO     | agents.publisher - Would publish to @ai_pulse_ai: <b>Bringing ChatGPT for Teachers to more U.S. school districts</b>
+
+ChatGPT for 
+2026-08-27 09:55:16 | INFO     | agents.publisher - Would publish to @ai_pulse_ai: <b>The Hugging Face incident and the road ahead</b>
+
+OpenAI shares findings from
+2026-08-27 09:55:17 | INFO     | agents.publisher - Would publish to @ai_pulse_ai: <b>Stampli cuts launch hours by 68% using ChatGPT Work</b>
+
+With a fixed deadlin
+2026-08-27 09:55:18 | INFO     | agents.publisher - Would publish to @ai_pulse_ai: <b>Intelligent transcription with Gemini 3.5 Transcribe</b>
+
+Now you can get mor
+2026-08-27 09:55:19 | SUCCESS  | __main__ - Pipeline completed! 5 posts
+2026-08-27 09:55:19 | INFO     | __main__ - AI-Pulse finished
