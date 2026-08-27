@@ -2,6 +2,7 @@
 """Интерактивный бот для канала AI-Pulse"""
 import os
 import re
+import sys
 import asyncio
 import requests
 from urllib.parse import urlparse
@@ -12,17 +13,36 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from dotenv import load_dotenv
 from groq import Groq
 
-# Загружаем переменные окружения
+# Загружаем переменные из .env (если файл существует)
 load_dotenv()
 
-# Токен бота
-TOKEN = os.getenv("INTERACTIVE_BOT_TOKEN")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+# --- ОТЛАДОЧНЫЙ ВЫВОД (убедимся, что переменные видны) ---
+print("=== DEBUG: Переменные окружения ===")
+# Выводим только ключи, чтобы не светить значениями
+env_keys = list(os.environ.keys())
+print(f"Доступные ключи: {env_keys}")
 
+# Проверяем наличие наших ключей
+token_env = os.getenv("INTERACTIVE_BOT_TOKEN")
+token_env2 = os.getenv("TELEGRAM_BOT_TOKEN")
+groq_env = os.getenv("GROQ_API_KEY")
+print(f"INTERACTIVE_BOT_TOKEN: {'НАЙДЕН' if token_env else 'ОТСУТСТВУЕТ'}")
+print(f"TELEGRAM_BOT_TOKEN: {'НАЙДЕН' if token_env2 else 'ОТСУТСТВУЕТ'}")
+print(f"GROQ_API_KEY: {'НАЙДЕН' if groq_env else 'ОТСУТСТВУЕТ'}")
+print("=== КОНЕЦ ОТЛАДКИ ===\n")
+
+# --- Получение токена бота ---
+# Пробуем взять из INTERACTIVE_BOT_TOKEN, если нет — из TELEGRAM_BOT_TOKEN
+TOKEN = token_env or token_env2
 if not TOKEN:
-    raise ValueError("INTERACTIVE_BOT_TOKEN не задан в .env")
+    print("❌ Ошибка: не найден токен бота ни в INTERACTIVE_BOT_TOKEN, ни в TELEGRAM_BOT_TOKEN.")
+    print("Убедитесь, что переменные окружения установлены на Render.")
+    sys.exit(1)
+
+GROQ_API_KEY = groq_env
 if not GROQ_API_KEY:
-    raise ValueError("GROQ_API_KEY не задан в .env")
+    print("❌ Ошибка: не найден GROQ_API_KEY.")
+    sys.exit(1)
 
 # Инициализируем Groq
 groq_client = Groq(api_key=GROQ_API_KEY)
@@ -33,7 +53,7 @@ async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный 
     """Отправляет запрос к Groq и возвращает ответ"""
     try:
         response = groq_client.chat.completions.create(
-            model="qwen/qwen3.8-27b",
+            model="qwen/qwen3.8-27b",  # можно заменить на другую доступную модель
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
@@ -82,7 +102,6 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = context.args[0]
-    # Проверяем, что ссылка корректная
     if not urlparse(url).scheme:
         await update.message.reply_text("❌ Непохоже на ссылку. Убедитесь, что начинается с http:// или https://")
         return
@@ -90,19 +109,14 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Получаю статью и делаю саммари... Это может занять 10–20 секунд.")
 
     try:
-        # Пытаемся получить содержимое страницы (упрощённо, можно улучшить)
         response = requests.get(url, timeout=15)
         if response.status_code != 200:
             await update.message.reply_text("❌ Не удалось загрузить страницу. Проверьте ссылку.")
             return
 
-        # Очень грубо извлекаем текст (в реальности лучше использовать readability)
-        # Для демонстрации просто берём первые 3000 символов
         raw_text = response.text
-        # Удаляем HTML-теги
-        import re as regex
-        clean_text = regex.sub(r'<[^>]+>', ' ', raw_text)
-        clean_text = regex.sub(r'\s+', ' ', clean_text).strip()[:3000]
+        clean_text = re.sub(r'<[^>]+>', ' ', raw_text)
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()[:3000]
 
         prompt = f"""
 Сделай краткое саммари (до 500 символов) этой статьи:
@@ -158,17 +172,14 @@ async def ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Точка входа"""
-    # Создаём приложение
     application = Application.builder().token(TOKEN).build()
 
-    # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("summary", summary))
     application.add_handler(CommandHandler("tools", tools))
     application.add_handler(CommandHandler("ideas", ideas))
 
-    # Запускаем бота
     print("🤖 Бот запущен и ожидает команды...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
