@@ -3,57 +3,45 @@
 import os
 import re
 import sys
-import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
 import requests
 from urllib.parse import urlparse
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 from dotenv import load_dotenv
 from groq import Groq
 
-# Загружаем переменные из .env (если файл существует)
+# Загружаем переменные окружения (если есть .env)
 load_dotenv()
 
-# --- ОТЛАДОЧНЫЙ ВЫВОД (убедимся, что переменные видны) ---
-print("=== DEBUG: Переменные окружения ===")
-# Выводим только ключи, чтобы не светить значениями
-env_keys = list(os.environ.keys())
-print(f"Доступные ключи: {env_keys}")
+# --- Получение токенов ---
+TOKEN = os.getenv("INTERACTIVE_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# Проверяем наличие наших ключей
-token_env = os.getenv("INTERACTIVE_BOT_TOKEN")
-token_env2 = os.getenv("TELEGRAM_BOT_TOKEN")
-groq_env = os.getenv("GROQ_API_KEY")
-print(f"INTERACTIVE_BOT_TOKEN: {'НАЙДЕН' if token_env else 'ОТСУТСТВУЕТ'}")
-print(f"TELEGRAM_BOT_TOKEN: {'НАЙДЕН' if token_env2 else 'ОТСУТСТВУЕТ'}")
-print(f"GROQ_API_KEY: {'НАЙДЕН' if groq_env else 'ОТСУТСТВУЕТ'}")
-print("=== КОНЕЦ ОТЛАДКИ ===\n")
-
-# --- Получение токена бота ---
-# Пробуем взять из INTERACTIVE_BOT_TOKEN, если нет — из TELEGRAM_BOT_TOKEN
-TOKEN = token_env or token_env2
 if not TOKEN:
-    print("❌ Ошибка: не найден токен бота ни в INTERACTIVE_BOT_TOKEN, ни в TELEGRAM_BOT_TOKEN.")
-    print("Убедитесь, что переменные окружения установлены на Render.")
-    sys.exit(1)
-
-GROQ_API_KEY = groq_env
+    sys.exit("❌ Ошибка: не найден токен бота (INTERACTIVE_BOT_TOKEN или TELEGRAM_BOT_TOKEN).")
 if not GROQ_API_KEY:
-    print("❌ Ошибка: не найден GROQ_API_KEY.")
-    sys.exit(1)
+    sys.exit("❌ Ошибка: не найден GROQ_API_KEY.")
 
-# Инициализируем Groq
+# Инициализируем клиент Groq
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# ---- Вспомогательные функции для работы с Groq ----
+# --- HTTP сервер для health check (чтобы Render видел открытый порт) ---
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'OK')
 
+# --- Вспомогательная функция для запросов к Groq ---
 async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный AI-ассистент.") -> str:
-    """Отправляет запрос к Groq и возвращает ответ"""
     try:
         response = groq_client.chat.completions.create(
-            model="qwen/qwen3.8-27b",  # можно заменить на другую доступную модель
+            model="qwen/qwen3.8-27b",  # или другая доступная модель
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
@@ -65,10 +53,8 @@ async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный 
     except Exception as e:
         return f"❌ Ошибка при обращении к AI: {str(e)}"
 
-# ---- Обработчики команд ----
-
+# --- Обработчики команд ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Приветственное сообщение"""
     welcome_text = (
         "👋 Привет! Я — AI-ассистент канала AI-Pulse.\n\n"
         "Я могу:\n"
@@ -80,7 +66,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome_text)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Список команд"""
     help_text = (
         "📌 Доступные команды:\n\n"
         "/start — приветствие\n"
@@ -96,7 +81,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_text)
 
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик /summary — делает саммари по ссылке"""
     if not context.args:
         await update.message.reply_text("❌ Укажите ссылку после команды, например: /summary https://example.com/article")
         return
@@ -132,7 +116,6 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Ошибка при обработке: {str(e)}")
 
 async def tools(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик /tools — подбор AI-инструментов"""
     if not context.args:
         await update.message.reply_text("❌ Опишите задачу после команды, например: /tools создать чат-бота на русском")
         return
@@ -151,7 +134,6 @@ async def tools(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🛠 **Рекомендуемые инструменты:**\n\n{result}")
 
 async def ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик /ideas — генерация идей"""
     if not context.args:
         await update.message.reply_text("❌ Укажите тему после команды, например: /ideas образовательное приложение с AI")
         return
@@ -168,18 +150,25 @@ async def ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = await ask_groq(prompt, "Ты — креативный стратег и предприниматель.")
     await update.message.reply_text(f"💡 **Идеи по теме «{topic}»:**\n\n{result}")
 
-# ---- Запуск бота ----
-
+# --- Основная функция ---
 def main():
-    """Точка входа"""
+    # Создаём приложение
     application = Application.builder().token(TOKEN).build()
 
+    # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("summary", summary))
     application.add_handler(CommandHandler("tools", tools))
     application.add_handler(CommandHandler("ideas", ideas))
 
+    # Запускаем простой HTTP-сервер для health checks (чтобы Render видел открытый порт)
+    port = int(os.environ.get('PORT', 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    print(f"✅ Health check server running on port {port}")
+
+    # Запускаем бота
     print("🤖 Бот запущен и ожидает команды...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
