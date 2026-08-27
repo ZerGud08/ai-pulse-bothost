@@ -4,6 +4,8 @@ import os
 import re
 import sys
 import threading
+import asyncio
+from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import requests
@@ -14,6 +16,11 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 from dotenv import load_dotenv
 from groq import Groq
+
+# Импорты для планировщика и пайплайна
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from orchestrator.main import Orchestrator
 
 # Загружаем переменные окружения (если есть .env)
 load_dotenv()
@@ -30,6 +37,9 @@ if not GROQ_API_KEY:
 # Инициализируем клиент Groq
 groq_client = Groq(api_key=GROQ_API_KEY)
 
+# Создаём экземпляр оркестратора для публикаций (глобально)
+orchestrator = Orchestrator()
+
 # --- HTTP сервер для health check (чтобы Render видел открытый порт) ---
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -41,7 +51,7 @@ class HealthHandler(BaseHTTPRequestHandler):
 async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный AI-ассистент.") -> str:
     try:
         response = groq_client.chat.completions.create(
-            model="qwen/qwen3.8-27b",  # или другая доступная модель
+            model="qwen/qwen3.8-27b",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
@@ -52,6 +62,18 @@ async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный 
         return response.choices[0].message.content
     except Exception as e:
         return f"❌ Ошибка при обращении к AI: {str(e)}"
+
+# --- Функция-обёртка для запуска пайплайна ---
+async def run_pipeline_wrapper():
+    """Обёртка для запуска пайплайна с обработкой ошибок"""
+    print("🔄 Запуск пайплайна публикации...")
+    try:
+        await orchestrator.run_pipeline()
+        print("✅ Пайплайн успешно завершён")
+    except Exception as e:
+        print(f"❌ Ошибка в пайплайне: {e}")
+        import traceback
+        traceback.print_exc()
 
 # --- Обработчики команд ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,7 +94,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help — эта справка\n"
         "/summary <ссылка> — краткое содержание статьи\n"
         "/tools <запрос> — подбор AI-инструментов\n"
-        "/ideas <тема> — генерация идей\n\n"
+        "/ideas <тема> — генерация идей\n"
+        "/publish_now — ручной запуск публикации новостей\n\n"
         "Примеры:\n"
         "/summary https://openai.com/blog/gpt-4-1\n"
         "/tools хочу сделать чат-бота для поддержки\n"
@@ -150,6 +173,15 @@ async def ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = await ask_groq(prompt, "Ты — креативный стратег и предприниматель.")
     await update.message.reply_text(f"💡 **Идеи по теме «{topic}»:**\n\n{result}")
 
+async def publish_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ручной запуск пайплайна публикации"""
+    await update.message.reply_text("⏳ Запускаю пайплайн публикации новостей...")
+    try:
+        await run_pipeline_wrapper()
+        await update.message.reply_text("✅ Публикация завершена! Проверьте канал.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка при публикации: {e}")
+
 # --- Основная функция ---
 def main():
     # Создаём приложение
@@ -161,8 +193,23 @@ def main():
     application.add_handler(CommandHandler("summary", summary))
     application.add_handler(CommandHandler("tools", tools))
     application.add_handler(CommandHandler("ideas", ideas))
+    application.add_handler(CommandHandler("publish_now", publish_now))
 
-    # Запускаем простой HTTP-сервер для health checks (чтобы Render видел открытый порт)
+    # --- Настройка планировщика ---
+    scheduler = AsyncIOScheduler()
+
+    # Запускаем пайплайн каждые 4 часа (можно изменить интервал)
+    scheduler.add_job(
+        run_pipeline_wrapper,
+        trigger=IntervalTrigger(hours=4),
+        id="publish_news",
+        next_run_time=datetime.now() + timedelta(seconds=15)  # первый запуск через 15 секунд
+    )
+
+    scheduler.start()
+    print("✅ Планировщик публикаций запущен (каждые 4 часа)")
+
+    # Запускаем простой HTTP-сервер для health checks
     port = int(os.environ.get('PORT', 8080))
     server = HTTPServer(('0.0.0.0', port), HealthHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
