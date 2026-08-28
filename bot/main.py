@@ -66,20 +66,19 @@ async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный 
     except Exception as e:
         return f"❌ Ошибка при обращении к AI: {str(e)}"
 
-# --- Функция для отправки уведомлений администратору ---
+# --- Функция для отправки уведомлений администратору (без parse_mode) ---
 async def send_error_notification(error_text: str, context: str = ""):
     """Отправляет сообщение об ошибке администратору"""
     if not ADMIN_USER_ID:
         return
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        message = f"⚠️ **Ошибка в пайплайне**\n\n{error_text}"
+        message = f"⚠️ Ошибка в пайплайне\n\n{error_text}"
         if context:
-            message += f"\n\n**Контекст:** {context}"
+            message += f"\n\nКонтекст: {context}"
         data = {
             "chat_id": ADMIN_USER_ID,
             "text": message,
-            "parse_mode": "Markdown"
         }
         response = requests.post(url, data=data)
         if response.status_code == 200:
@@ -204,7 +203,7 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clean_text = re.sub(r'\s+', ' ', clean_text).strip()[:3000]
         prompt = f"Сделай краткое саммари (до 500 символов) этой статьи:\n\n{clean_text}\n\nВыдели главную мысль."
         summary_text = await ask_groq(prompt, "Ты — опытный редактор.")
-        await update.message.reply_text(f"📄 **Краткое содержание:**\n\n{summary_text}")
+        await update.message.reply_text(f"📄 Краткое содержание:\n\n{summary_text}")
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка: {str(e)}")
 
@@ -216,7 +215,7 @@ async def tools(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Ищу инструменты...")
     prompt = f"Предложи 3–5 AI-инструментов для задачи: {query}. Укажи, какие бесплатные, какие платные. Ответ на русском."
     result = await ask_groq(prompt, "Ты — эксперт по AI-инструментам.")
-    await update.message.reply_text(f"🛠 **Инструменты:**\n\n{result}")
+    await update.message.reply_text(f"🛠 Инструменты:\n\n{result}")
 
 async def ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -226,7 +225,7 @@ async def ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Генерирую идеи...")
     prompt = f"Сгенерируй 5 креативных идей для проекта на тему: {topic}. Описание и аудитория. Ответ на русском."
     result = await ask_groq(prompt, "Ты — креативный стратег.")
-    await update.message.reply_text(f"💡 **Идеи:**\n\n{result}")
+    await update.message.reply_text(f"💡 Идеи:\n\n{result}")
 
 async def publish_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Запускаю публикацию новости...")
@@ -263,8 +262,8 @@ async def show_published(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not urls:
             await update.message.reply_text("📭 Список пуст.")
             return
-        text = "📋 **Опубликованные URL (последние 10):**\n\n" + "\n".join(urls[-10:])
-        await update.message.reply_text(text, parse_mode='Markdown')
+        text = "📋 Опубликованные URL (последние 10):\n\n" + "\n".join(urls[-10:])
+        await update.message.reply_text(text)
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка: {e}")
 
@@ -286,7 +285,6 @@ async def export_published(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает статистику канала (подписчики и количество постов)"""
     try:
-        # Получаем информацию о канале через Bot API
         url = f"https://api.telegram.org/bot{TOKEN}/getChat"
         data = {"chat_id": f"@{CHANNEL_USERNAME}"}
         response = requests.post(url, data=data)
@@ -299,7 +297,6 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         member_count = chat_info.get("member_count", "неизвестно")
         title = chat_info.get("title", "AI-Pulse")
 
-        # Считаем количество опубликованных постов из файла
         file_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'published_urls.json')
         posts_count = 0
         if os.path.exists(file_path):
@@ -311,13 +308,13 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 posts_count = 0
 
         text = (
-            f"📊 **Статистика канала**\n\n"
+            f"📊 Статистика канала\n\n"
             f"📌 Название: {title}\n"
             f"👥 Подписчиков: {member_count}\n"
             f"📰 Опубликовано постов: {posts_count}\n"
             f"🔗 Ссылка: https://t.me/{CHANNEL_USERNAME}"
         )
-        await update.message.reply_text(text, parse_mode='Markdown')
+        await update.message.reply_text(text)
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка при получении статистики: {str(e)}")
 
