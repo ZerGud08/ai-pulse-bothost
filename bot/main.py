@@ -43,12 +43,16 @@ if not ADMIN_USER_ID:
 groq_client = Groq(api_key=GROQ_API_KEY)
 orchestrator = Orchestrator()
 
-# --- HTTP сервер для health check ---
+# --- HTTP сервер для health check (поддержка GET и HEAD) ---
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b'OK')
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
 
 # --- Вспомогательная функция для запросов к Groq ---
 async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный AI-ассистент.") -> str:
@@ -66,9 +70,8 @@ async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный 
     except Exception as e:
         return f"❌ Ошибка при обращении к AI: {str(e)}"
 
-# --- Функция для отправки уведомлений администратору (без parse_mode) ---
+# --- Функция для отправки уведомлений администратору ---
 async def send_error_notification(error_text: str, context: str = ""):
-    """Отправляет сообщение об ошибке администратору"""
     if not ADMIN_USER_ID:
         return
     try:
@@ -268,7 +271,6 @@ async def show_published(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Ошибка: {e}")
 
 async def export_published(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отправляет файл published_urls.json администратору"""
     if update.effective_user.id != ADMIN_USER_ID:
         await update.message.reply_text("❌ Эта команда доступна только администратору.")
         return
@@ -283,7 +285,6 @@ async def export_published(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Ошибка при отправке файла: {e}")
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает статистику канала (подписчики и количество постов)"""
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/getChat"
         data = {"chat_id": f"@{CHANNEL_USERNAME}"}
