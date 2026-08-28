@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+import json
 import threading
 import asyncio
 from datetime import datetime, timedelta
@@ -102,7 +103,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/summary <ссылка> — краткое содержание статьи\n"
         "/tools <запрос> — подбор AI-инструментов\n"
         "/ideas <тема> — генерация идей\n"
-        "/publish_now — ручной запуск публикации новостей\n\n"
+        "/publish_now — ручной запуск публикации новостей\n"
+        "/show_published — показать последние опубликованные URL\n\n"
         "Примеры:\n"
         "/summary https://openai.com/blog/gpt-4-1\n"
         "/tools хочу сделать чат-бота для поддержки\n"
@@ -189,16 +191,38 @@ async def publish_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка при публикации: {e}")
 
+async def show_published(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает последние 10 опубликованных URL"""
+    file_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'published_urls.json')
+    if not os.path.exists(file_path):
+        await update.message.reply_text("❌ Файл с опубликованными URL пока не создан.")
+        return
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            urls = json.load(f)
+        if not urls:
+            await update.message.reply_text("📭 Список опубликованных URL пуст.")
+            return
+
+        # Показываем последние 10 URL
+        text = "📋 **Опубликованные URL (последние 10):**\n\n" + "\n".join(urls[-10:])
+        await update.message.reply_text(text, parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка при чтении файла: {e}")
+
 # --- Основная функция ---
 def main():
     application = Application.builder().token(TOKEN).build()
 
+    # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("summary", summary))
     application.add_handler(CommandHandler("tools", tools))
     application.add_handler(CommandHandler("ideas", ideas))
     application.add_handler(CommandHandler("publish_now", publish_now))
+    application.add_handler(CommandHandler("show_published", show_published))
 
     # --- Планировщик: публикация каждые 88 минут ---
     scheduler = BackgroundScheduler()
@@ -207,7 +231,7 @@ def main():
         run_pipeline_sync,
         trigger=IntervalTrigger(minutes=88),
         id="publish_news",
-        next_run_time=datetime.now() + timedelta(seconds=15)  # первый запуск через 15 секунд
+        next_run_time=datetime.now() + timedelta(seconds=15)
     )
 
     scheduler.start()
