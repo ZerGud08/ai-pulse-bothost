@@ -18,10 +18,6 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 from groq import Groq
 
-# Для работы с историей канала
-from telethon import TelegramClient, events, sync
-from telethon.tl.functions.messages import GetHistoryRequest
-
 # Импорты для планировщика
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -34,10 +30,8 @@ load_dotenv()
 # --- Получение токенов и ID ---
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("INTERACTIVE_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0))  # ваш Telegram ID
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0))
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "ai_pulse_ai")
-TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", 0))
-TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH", "")
 
 if not TOKEN:
     sys.exit("❌ Ошибка: не найден токен бота.")
@@ -45,8 +39,6 @@ if not GROQ_API_KEY:
     sys.exit("❌ Ошибка: не найден GROQ_API_KEY.")
 if not ADMIN_USER_ID:
     sys.exit("❌ Ошибка: не задан ADMIN_USER_ID (ваш Telegram ID).")
-if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
-    sys.exit("❌ Ошибка: не заданы TELEGRAM_API_ID и TELEGRAM_API_HASH.")
 
 groq_client = Groq(api_key=GROQ_API_KEY)
 orchestrator = Orchestrator()
@@ -80,9 +72,6 @@ async def send_error_notification(error_text: str, context: str = ""):
     if not ADMIN_USER_ID:
         return
     try:
-        # Создаём временное приложение для отправки (или используем глобальный)
-        # Но проще использовать уже существующий бот – мы не можем получить доступ к application извне.
-        # Вместо этого используем прямой запрос к Bot API.
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         message = f"⚠️ **Ошибка в пайплайне**\n\n{error_text}"
         if context:
@@ -173,7 +162,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 📊 /daily_digest — ручной запуск дайджеста\n"
         "• 📈 /weekly_analytics — ручной запуск аналитики\n"
         "• 📋 /show_published — показать опубликованные URL\n"
-        "• 📊 /stats — статистика просмотров последних постов\n"
+        "• 📊 /stats — статистика канала\n"
         "• 💾 /export_published — получить файл с опубликованными URL"
     )
     await update.message.reply_text(welcome_text)
@@ -190,7 +179,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/daily_digest — ручной запуск ежедневного дайджеста\n"
         "/weekly_analytics — ручной запуск еженедельной аналитики\n"
         "/show_published — показать последние опубликованные URL\n"
-        "/stats — статистика просмотров последних 5 постов\n"
+        "/stats — статистика канала (подписчики, количество постов)\n"
         "/export_published — скачать файл с опубликованными URL"
     )
     await update.message.reply_text(help_text)
@@ -295,52 +284,42 @@ async def export_published(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Ошибка при отправке файла: {e}")
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает просмотры последних 5 постов в канале"""
-    await update.message.reply_text("⏳ Получаю статистику постов...")
+    """Показывает статистику канала (подписчики и количество постов)"""
     try:
-        # Используем Telethon для получения истории канала
-        client = TelegramClient('bot_session', TELEGRAM_API_ID, TELEGRAM_API_HASH)
-        await client.start(bot_token=TOKEN)  # запускаем как бот
-
-        # Получаем объект канала
-        entity = await client.get_entity(f"@{CHANNEL_USERNAME}")
-
-        # Получаем последние 10 сообщений (чтобы точно было 5, но с учётом того, что часть может быть служебными)
-        history = await client(GetHistoryRequest(
-            peer=entity,
-            limit=10,
-            offset_date=None,
-            offset_id=0,
-            max_id=0,
-            min_id=0,
-            add_offset=0,
-            hash=0
-        ))
-
-        messages = history.messages
-        # Фильтруем только текстовые сообщения (не служебные)
-        text_messages = [msg for msg in messages if msg.text and not msg.text.startswith('/')]
-        if not text_messages:
-            await update.message.reply_text("📭 В канале нет текстовых постов.")
-            await client.disconnect()
+        # Получаем информацию о канале через Bot API
+        url = f"https://api.telegram.org/bot{TOKEN}/getChat"
+        data = {"chat_id": f"@{CHANNEL_USERNAME}"}
+        response = requests.post(url, data=data)
+        result = response.json()
+        if not result.get("ok"):
+            await update.message.reply_text("❌ Не удалось получить статистику канала.")
             return
 
-        # Берём последние 5
-        recent = text_messages[:5]
-        result = "📊 **Статистика просмотров (последние 5 постов):**\n\n"
-        for i, msg in enumerate(reversed(recent), 1):
-            views = msg.views if hasattr(msg, 'views') and msg.views is not None else 'нет данных'
-            date = msg.date.strftime('%d.%m %H:%M')
-            preview = msg.text[:60].replace('\n', ' ') + '...' if len(msg.text) > 60 else msg.text.replace('\n', ' ')
-            result += f"{i}. {preview}\n   👁 {views} просмотров, {date}\n\n"
+        chat_info = result.get("result", {})
+        member_count = chat_info.get("member_count", "неизвестно")
+        title = chat_info.get("title", "AI-Pulse")
 
-        await update.message.reply_text(result, parse_mode='Markdown')
-        await client.disconnect()
+        # Считаем количество опубликованных постов из файла
+        file_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'published_urls.json')
+        posts_count = 0
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    urls = json.load(f)
+                    posts_count = len(urls)
+            except:
+                posts_count = 0
 
+        text = (
+            f"📊 **Статистика канала**\n\n"
+            f"📌 Название: {title}\n"
+            f"👥 Подписчиков: {member_count}\n"
+            f"📰 Опубликовано постов: {posts_count}\n"
+            f"🔗 Ссылка: https://t.me/{CHANNEL_USERNAME}"
+        )
+        await update.message.reply_text(text, parse_mode='Markdown')
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка при получении статистики: {str(e)}")
-        import traceback
-        traceback.print_exc()
 
 # --- Основная функция ---
 def main():
