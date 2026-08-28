@@ -18,6 +18,10 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 from groq import Groq
 
+# Для работы с историей канала
+from telethon import TelegramClient, events, sync
+from telethon.tl.functions.messages import GetHistoryRequest
+
 # Импорты для планировщика
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -27,14 +31,22 @@ from orchestrator.main import Orchestrator
 # Загружаем переменные окружения
 load_dotenv()
 
-# --- Получение токенов ---
-TOKEN = os.getenv("INTERACTIVE_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+# --- Получение токенов и ID ---
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("INTERACTIVE_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0))  # ваш Telegram ID
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "ai_pulse_ai")
+TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", 0))
+TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH", "")
 
 if not TOKEN:
-    sys.exit("❌ Ошибка: не найден токен бота (INTERACTIVE_BOT_TOKEN или TELEGRAM_BOT_TOKEN).")
+    sys.exit("❌ Ошибка: не найден токен бота.")
 if not GROQ_API_KEY:
     sys.exit("❌ Ошибка: не найден GROQ_API_KEY.")
+if not ADMIN_USER_ID:
+    sys.exit("❌ Ошибка: не задан ADMIN_USER_ID (ваш Telegram ID).")
+if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
+    sys.exit("❌ Ошибка: не заданы TELEGRAM_API_ID и TELEGRAM_API_HASH.")
 
 groq_client = Groq(api_key=GROQ_API_KEY)
 orchestrator = Orchestrator()
@@ -46,7 +58,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'OK')
 
-# --- Вспомогательная функция для Groq ---
+# --- Вспомогательная функция для запросов к Groq ---
 async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный AI-ассистент.") -> str:
     try:
         response = groq_client.chat.completions.create(
@@ -62,7 +74,33 @@ async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный 
     except Exception as e:
         return f"❌ Ошибка при обращении к AI: {str(e)}"
 
-# --- Функции-обёртки для пайплайнов (возвращают результат) ---
+# --- Функция для отправки уведомлений администратору ---
+async def send_error_notification(error_text: str, context: str = ""):
+    """Отправляет сообщение об ошибке администратору"""
+    if not ADMIN_USER_ID:
+        return
+    try:
+        # Создаём временное приложение для отправки (или используем глобальный)
+        # Но проще использовать уже существующий бот – мы не можем получить доступ к application извне.
+        # Вместо этого используем прямой запрос к Bot API.
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        message = f"⚠️ **Ошибка в пайплайне**\n\n{error_text}"
+        if context:
+            message += f"\n\n**Контекст:** {context}"
+        data = {
+            "chat_id": ADMIN_USER_ID,
+            "text": message,
+            "parse_mode": "Markdown"
+        }
+        response = requests.post(url, data=data)
+        if response.status_code == 200:
+            print(f"✅ Уведомление об ошибке отправлено администратору.")
+        else:
+            print(f"❌ Не удалось отправить уведомление: {response.text}")
+    except Exception as e:
+        print(f"❌ Ошибка при отправке уведомления: {e}")
+
+# --- Функции-обёртки для пайплайнов с уведомлениями ---
 async def run_pipeline_wrapper():
     start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"🔄 [{start_time}] Запуск обычного пайплайна...")
@@ -71,9 +109,11 @@ async def run_pipeline_wrapper():
         print(f"✅ [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Пайплайн завершён")
         return True
     except Exception as e:
-        print(f"❌ Ошибка в пайплайне: {e}")
+        error_msg = str(e)
+        print(f"❌ Ошибка в пайплайне: {error_msg}")
         import traceback
         traceback.print_exc()
+        await send_error_notification(error_msg, "run_pipeline")
         return False
 
 async def run_daily_digest_wrapper():
@@ -84,11 +124,14 @@ async def run_daily_digest_wrapper():
             print("✅ Дайджест успешно опубликован")
         else:
             print("❌ Дайджест не опубликован (нет новостей или ошибка)")
+            await send_error_notification("Дайджест не опубликован (нет новостей или ошибка)", "daily_digest")
         return result
     except Exception as e:
-        print(f"❌ Ошибка в дайджесте: {e}")
+        error_msg = str(e)
+        print(f"❌ Ошибка в дайджесте: {error_msg}")
         import traceback
         traceback.print_exc()
+        await send_error_notification(error_msg, "daily_digest")
         return False
 
 async def run_weekly_analytics_wrapper():
@@ -99,11 +142,14 @@ async def run_weekly_analytics_wrapper():
             print("✅ Аналитика успешно опубликована")
         else:
             print("❌ Аналитика не опубликована (нет новостей или ошибка)")
+            await send_error_notification("Аналитика не опубликована (нет новостей или ошибка)", "weekly_analytics")
         return result
     except Exception as e:
-        print(f"❌ Ошибка в аналитике: {e}")
+        error_msg = str(e)
+        print(f"❌ Ошибка в аналитике: {error_msg}")
         import traceback
         traceback.print_exc()
+        await send_error_notification(error_msg, "weekly_analytics")
         return False
 
 def run_pipeline_sync():
@@ -126,7 +172,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 📰 /publish_now — ручная публикация новости\n"
         "• 📊 /daily_digest — ручной запуск дайджеста\n"
         "• 📈 /weekly_analytics — ручной запуск аналитики\n"
-        "• 📋 /show_published — показать опубликованные URL"
+        "• 📋 /show_published — показать опубликованные URL\n"
+        "• 📊 /stats — статистика просмотров последних постов\n"
+        "• 💾 /export_published — получить файл с опубликованными URL"
     )
     await update.message.reply_text(welcome_text)
 
@@ -141,11 +189,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/publish_now — ручной запуск публикации новости\n"
         "/daily_digest — ручной запуск ежедневного дайджеста\n"
         "/weekly_analytics — ручной запуск еженедельной аналитики\n"
-        "/show_published — показать последние опубликованные URL\n\n"
-        "Примеры:\n"
-        "/summary https://openai.com/blog/gpt-4-1\n"
-        "/tools хочу сделать чат-бота для поддержки\n"
-        "/ideas сервис для автоматического перевода видео"
+        "/show_published — показать последние опубликованные URL\n"
+        "/stats — статистика просмотров последних 5 постов\n"
+        "/export_published — скачать файл с опубликованными URL"
     )
     await update.message.reply_text(help_text)
 
@@ -233,6 +279,69 @@ async def show_published(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка: {e}")
 
+async def export_published(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отправляет файл published_urls.json администратору"""
+    if update.effective_user.id != ADMIN_USER_ID:
+        await update.message.reply_text("❌ Эта команда доступна только администратору.")
+        return
+    file_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'published_urls.json')
+    if not os.path.exists(file_path):
+        await update.message.reply_text("❌ Файл не найден.")
+        return
+    try:
+        with open(file_path, 'rb') as f:
+            await update.message.reply_document(document=f, filename='published_urls.json')
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка при отправке файла: {e}")
+
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает просмотры последних 5 постов в канале"""
+    await update.message.reply_text("⏳ Получаю статистику постов...")
+    try:
+        # Используем Telethon для получения истории канала
+        client = TelegramClient('bot_session', TELEGRAM_API_ID, TELEGRAM_API_HASH)
+        await client.start(bot_token=TOKEN)  # запускаем как бот
+
+        # Получаем объект канала
+        entity = await client.get_entity(f"@{CHANNEL_USERNAME}")
+
+        # Получаем последние 10 сообщений (чтобы точно было 5, но с учётом того, что часть может быть служебными)
+        history = await client(GetHistoryRequest(
+            peer=entity,
+            limit=10,
+            offset_date=None,
+            offset_id=0,
+            max_id=0,
+            min_id=0,
+            add_offset=0,
+            hash=0
+        ))
+
+        messages = history.messages
+        # Фильтруем только текстовые сообщения (не служебные)
+        text_messages = [msg for msg in messages if msg.text and not msg.text.startswith('/')]
+        if not text_messages:
+            await update.message.reply_text("📭 В канале нет текстовых постов.")
+            await client.disconnect()
+            return
+
+        # Берём последние 5
+        recent = text_messages[:5]
+        result = "📊 **Статистика просмотров (последние 5 постов):**\n\n"
+        for i, msg in enumerate(reversed(recent), 1):
+            views = msg.views if hasattr(msg, 'views') and msg.views is not None else 'нет данных'
+            date = msg.date.strftime('%d.%m %H:%M')
+            preview = msg.text[:60].replace('\n', ' ') + '...' if len(msg.text) > 60 else msg.text.replace('\n', ' ')
+            result += f"{i}. {preview}\n   👁 {views} просмотров, {date}\n\n"
+
+        await update.message.reply_text(result, parse_mode='Markdown')
+        await client.disconnect()
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка при получении статистики: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
 # --- Основная функция ---
 def main():
     application = Application.builder().token(TOKEN).build()
@@ -246,11 +355,12 @@ def main():
     application.add_handler(CommandHandler("daily_digest", daily_digest))
     application.add_handler(CommandHandler("weekly_analytics", weekly_analytics))
     application.add_handler(CommandHandler("show_published", show_published))
+    application.add_handler(CommandHandler("export_published", export_published))
+    application.add_handler(CommandHandler("stats", stats))
 
     # --- Планировщик ---
     scheduler = BackgroundScheduler()
 
-    # 1. Обычная публикация каждые 88 минут
     scheduler.add_job(
         run_pipeline_sync,
         trigger=IntervalTrigger(minutes=88),
@@ -259,7 +369,6 @@ def main():
         next_run_time=datetime.now() + timedelta(seconds=15)
     )
 
-    # 2. Ежедневный дайджест – каждый день в 9:00 МСК (6:00 UTC)
     scheduler.add_job(
         run_daily_digest_sync,
         trigger=CronTrigger(hour=6, minute=0, timezone='Europe/Moscow'),
@@ -267,7 +376,6 @@ def main():
         replace_existing=True
     )
 
-    # 3. Еженедельная аналитика – по пятницам в 18:00 МСК (15:00 UTC)
     scheduler.add_job(
         run_weekly_analytics_sync,
         trigger=CronTrigger(day_of_week='fri', hour=15, minute=0, timezone='Europe/Moscow'),
