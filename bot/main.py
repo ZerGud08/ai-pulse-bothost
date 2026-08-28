@@ -17,7 +17,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 from groq import Groq
 
-# Импорты для планировщика (используем BackgroundScheduler)
+# Импорты для планировщика
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from orchestrator.main import Orchestrator
@@ -63,17 +63,24 @@ async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный 
     except Exception as e:
         return f"❌ Ошибка при обращении к AI: {str(e)}"
 
-# --- Функция-обёртка для запуска пайплайна ---
+# --- Функция-обёртка для запуска пайплайна с логированием ---
 async def run_pipeline_wrapper():
-    """Обёртка для запуска пайплайна с обработкой ошибок"""
-    print("🔄 Запуск пайплайна публикации...")
+    """Обёртка для запуска пайплайна с обработкой ошибок и логированием"""
+    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"🔄 [{start_time}] Запуск пайплайна публикации...")
     try:
         await orchestrator.run_pipeline()
-        print("✅ Пайплайн успешно завершён")
+        end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"✅ [{end_time}] Пайплайн успешно завершён")
     except Exception as e:
         print(f"❌ Ошибка в пайплайне: {e}")
         import traceback
         traceback.print_exc()
+
+# --- Синхронная обёртка для планировщика ---
+def run_pipeline_sync():
+    """Синхронная обёртка для запуска асинхронного пайплайна"""
+    asyncio.run(run_pipeline_wrapper())
 
 # --- Обработчики команд ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -184,10 +191,8 @@ async def publish_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Основная функция ---
 def main():
-    # Создаём приложение
     application = Application.builder().token(TOKEN).build()
 
-    # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("summary", summary))
@@ -195,31 +200,27 @@ def main():
     application.add_handler(CommandHandler("ideas", ideas))
     application.add_handler(CommandHandler("publish_now", publish_now))
 
-    # --- Настройка планировщика (BackgroundScheduler) ---
+    # --- Планировщик: публикация каждые 88 минут ---
     scheduler = BackgroundScheduler()
 
-    # Синхронная обёртка для запуска асинхронного пайплайна
-    def run_pipeline_sync():
-        asyncio.run(run_pipeline_wrapper())
-
-    # Запускаем пайплайн каждые 4 часа
     scheduler.add_job(
         run_pipeline_sync,
-        trigger=IntervalTrigger(hours=4),
+        trigger=IntervalTrigger(minutes=88),
         id="publish_news",
-        next_run_time=datetime.now() + timedelta(seconds=15)
+        next_run_time=datetime.now() + timedelta(seconds=15)  # первый запуск через 15 секунд
     )
 
     scheduler.start()
-    print("✅ Планировщик публикаций запущен (каждые 4 часа)")
+    next_run = scheduler.get_job('publish_news').next_run_time
+    print(f"✅ Планировщик публикаций запущен (каждые 88 минут)")
+    print(f"   Следующий запуск: {next_run.strftime('%Y-%m-%d %H:%M:%S')} (UTC)")
 
-    # Запускаем простой HTTP-сервер для health checks
+    # Health check сервер
     port = int(os.environ.get('PORT', 8080))
     server = HTTPServer(('0.0.0.0', port), HealthHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"✅ Health check server running on port {port}")
 
-    # Запускаем бота
     print("🤖 Бот запущен и ожидает команды...")
     application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
