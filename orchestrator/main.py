@@ -39,20 +39,27 @@ class Orchestrator:
                 logger.warning("No quality news")
                 return
 
-            logger.info("Curator selected " + str(len(quality_news)) + " news")
+            logger.info(f"Curator selected {len(quality_news)} news")
+
+            # Берем только одну новость для публикации
+            best_news = quality_news[:1]  # <-- только одна
 
             logger.info("Stage 3/4: Creating content...")
-            posts = await self.editor.process_batch(quality_news[:5])
+            posts = await self.editor.process_batch(best_news)
+
+            if not posts:
+                logger.warning("No posts generated")
+                return
 
             logger.info("Stage 4/4: Publishing...")
             for post in posts:
                 await self.publisher.publish(post)
                 await asyncio.sleep(1)
 
-            logger.success("Pipeline completed! " + str(len(posts)) + " posts")
+            logger.success(f"Pipeline completed! {len(posts)} post published")
 
         except Exception as e:
-            logger.error("Pipeline error: " + str(e))
+            logger.error(f"Pipeline error: {str(e)}")
             import traceback
             traceback.print_exc()
 

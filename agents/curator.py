@@ -8,30 +8,40 @@ class CuratorAgent:
     def __init__(self):
         self.published_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'published_urls.json')
         logger.info(f"Curator: файл опубликованных URL: {self.published_file}")
+        self._ensure_file()
 
-    def _load_published_urls(self):
-        if os.path.exists(self.published_file):
-            try:
-                with open(self.published_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    logger.info(f"Curator: загружено {len(data)} URL из файла")
-                    return data
-            except Exception as e:
-                logger.error(f"Curator: ошибка чтения файла: {e}")
-                return []
-        else:
-            logger.warning("Curator: файл опубликованных URL не найден, создаю пустой")
-            # Создаём пустой файл
-            os.makedirs(os.path.dirname(self.published_file), exist_ok=True)
+    def _ensure_file(self):
+        """Гарантирует, что файл существует и содержит корректный JSON (пустой список)"""
+        os.makedirs(os.path.dirname(self.published_file), exist_ok=True)
+        if not os.path.exists(self.published_file):
             with open(self.published_file, 'w', encoding='utf-8') as f:
                 json.dump([], f, ensure_ascii=False, indent=2)
+            logger.info("Curator: создан новый файл published_urls.json")
+        else:
+            try:
+                with open(self.published_file, 'r', encoding='utf-8') as f:
+                    json.load(f)
+            except (json.JSONDecodeError, ValueError):
+                logger.warning("Curator: файл повреждён, пересоздаю с пустым списком")
+                with open(self.published_file, 'w', encoding='utf-8') as f:
+                    json.dump([], f, ensure_ascii=False, indent=2)
+
+    def _load_published_urls(self):
+        try:
+            with open(self.published_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Curator: ошибка чтения файла: {e}")
+            self._ensure_file()
             return []
 
     def _save_published_urls(self, urls):
-        os.makedirs(os.path.dirname(self.published_file), exist_ok=True)
-        with open(self.published_file, 'w', encoding='utf-8') as f:
-            json.dump(urls, f, ensure_ascii=False, indent=2)
-        logger.info(f"Curator: сохранено {len(urls)} URL в файл")
+        try:
+            with open(self.published_file, 'w', encoding='utf-8') as f:
+                json.dump(urls, f, ensure_ascii=False, indent=2)
+            logger.info(f"Curator: сохранено {len(urls)} URL в файл")
+        except Exception as e:
+            logger.error(f"Curator: ошибка сохранения файла: {e}")
 
     def filter_news(self, items, min_score=60):
         published_urls = self._load_published_urls()
@@ -55,8 +65,8 @@ class CuratorAgent:
                 scored.append(item)
 
         scored.sort(key=lambda x: x['score'], reverse=True)
-        logger.info(f"Curator: отобрано {len(scored)} качественных новостей")
-        return scored[:10]
+        logger.info(f"Curator: отобрано {len(scored)} качественных новостей, возвращаю только лучшую")
+        return scored[:1]  # <-- только 1 пост
 
     def _calculate_score(self, item):
         # (ваша существующая логика скоринга – без изменений)

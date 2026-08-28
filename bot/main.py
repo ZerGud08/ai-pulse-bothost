@@ -231,7 +231,7 @@ def main():
     run_pipeline_sync,
     trigger=IntervalTrigger(minutes=88),
     id="publish_news",
-    replace_existing=True,   # <-- добавлено
+    replace_existing=True,
     next_run_time=datetime.now() + timedelta(seconds=15)
     )
 
