@@ -228,10 +228,11 @@ def main():
     scheduler = BackgroundScheduler()
 
     scheduler.add_job(
-        run_pipeline_sync,
-        trigger=IntervalTrigger(minutes=88),
-        id="publish_news",
-        next_run_time=datetime.now() + timedelta(seconds=15)
+    run_pipeline_sync,
+    trigger=IntervalTrigger(minutes=88),
+    id="publish_news",
+    replace_existing=True,   # <-- добавлено
+    next_run_time=datetime.now() + timedelta(seconds=15)
     )
 
     scheduler.start()

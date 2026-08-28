@@ -1,51 +1,52 @@
 ﻿"""Curator Agent - filters and scores news with deduplication"""
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from utils.logger import logger
 
 class CuratorAgent:
     def __init__(self):
         self.published_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'published_urls.json')
+        logger.info(f"Curator: файл опубликованных URL: {self.published_file}")
 
     def _load_published_urls(self):
-        """Загружает список уже опубликованных URL из файла"""
         if os.path.exists(self.published_file):
             try:
                 with open(self.published_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except:
+                    data = json.load(f)
+                    logger.info(f"Curator: загружено {len(data)} URL из файла")
+                    return data
+            except Exception as e:
+                logger.error(f"Curator: ошибка чтения файла: {e}")
                 return []
-        return []
+        else:
+            logger.warning("Curator: файл опубликованных URL не найден, создаю пустой")
+            # Создаём пустой файл
+            os.makedirs(os.path.dirname(self.published_file), exist_ok=True)
+            with open(self.published_file, 'w', encoding='utf-8') as f:
+                json.dump([], f, ensure_ascii=False, indent=2)
+            return []
 
     def _save_published_urls(self, urls):
-        """Сохраняет список опубликованных URL в файл"""
         os.makedirs(os.path.dirname(self.published_file), exist_ok=True)
         with open(self.published_file, 'w', encoding='utf-8') as f:
             json.dump(urls, f, ensure_ascii=False, indent=2)
+        logger.info(f"Curator: сохранено {len(urls)} URL в файл")
 
     def filter_news(self, items, min_score=60):
-        """
-        Оценивает новости, отфильтровывает уже опубликованные,
-        и возвращает только новые, отсортированные по рейтингу.
-        """
-        # Загружаем уже опубликованные URL
         published_urls = self._load_published_urls()
         published_set = set(published_urls)
         logger.info(f"Curator: загружено {len(published_set)} уже опубликованных URL")
 
-        # Фильтруем новости, убирая те, что уже опубликованы
         new_items = []
         for item in items:
             url = item.get('url', '')
             if url and url in published_set:
                 continue
-            # Если URL отсутствует или новый, добавляем
             new_items.append(item)
 
         logger.info(f"Curator: после исключения дубликатов осталось {len(new_items)} новостей")
 
-        # Скоринг и отбор (используем существующий метод)
         scored = []
         for item in new_items:
             score = self._calculate_score(item)
@@ -54,11 +55,11 @@ class CuratorAgent:
                 scored.append(item)
 
         scored.sort(key=lambda x: x['score'], reverse=True)
-        logger.info(f"Curator: отобрано {len(scored)} качественных новостей (min_score={min_score})")
-        return scored[:10]  # Возвращаем топ-10
+        logger.info(f"Curator: отобрано {len(scored)} качественных новостей")
+        return scored[:10]
 
     def _calculate_score(self, item):
-        # (код скоринга остаётся без изменений, как в вашей предыдущей версии)
+        # (ваша существующая логика скоринга – без изменений)
         score = 0
         published = item.get('published_at')
         if published:
@@ -90,7 +91,7 @@ class CuratorAgent:
             'neural', 'machine learning', 'deep learning', 'ai model',
             'нейросеть', 'искусственный интеллект', 'машинное обучение',
             'transformers', 'diffusion', 'stable diffusion', 'midjourney',
-            'агент', 'агенты', 'agent', 'agents', 'автономный'
+            'агент', 'агенты', 'agent', 'agents'
         ]
         keyword_count = sum(1 for kw in ai_keywords if kw in text)
         score += min(keyword_count * 5, 30)
@@ -103,16 +104,15 @@ class CuratorAgent:
         practical_count = sum(1 for kw in practical_keywords if kw in text)
         score += min(practical_count * 5, 15)
 
-        viral_signals = ['breaking', 'first', 'new', 'exclusive', '重磅', 'first look']
+        viral_signals = ['breaking', 'first', 'new', 'exclusive', 'first look']
         if any(signal in text for signal in viral_signals):
             score += 10
 
         return min(score, 100)
 
     def add_published_url(self, url):
-        """Добавляет URL в список опубликованных и сохраняет файл"""
         urls = self._load_published_urls()
         if url not in urls:
             urls.append(url)
             self._save_published_urls(urls)
-            logger.info(f"Curator: добавлен URL в опубликованные: {url}")
+            logger.info(f"Curator: добавлен URL: {url}")
