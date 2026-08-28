@@ -1,6 +1,7 @@
 ﻿"""Main Orchestrator"""
 import asyncio
 import sys
+from datetime import datetime, timedelta
 
 from utils.logger import logger
 from agents.scout import ScoutAgent
@@ -10,8 +11,6 @@ from agents.publisher import PublisherAgent
 
 
 class Orchestrator:
-    """Main coordinator"""
-
     def __init__(self):
         self.scout = ScoutAgent()
         self.curator = CuratorAgent()
@@ -19,7 +18,7 @@ class Orchestrator:
         self.publisher = PublisherAgent()
 
     async def run_pipeline(self):
-        """Main pipeline"""
+        """Обычный пайплайн – публикует 1 лучший пост"""
         try:
             logger.info("=" * 50)
             logger.info("Pipeline started")
@@ -27,26 +26,21 @@ class Orchestrator:
 
             logger.info("Stage 1/4: Collecting news...")
             raw_news = await self.scout.fetch_all_sources()
-
             if not raw_news:
                 logger.warning("No new data")
                 return
 
             logger.info("Stage 2/4: Filtering...")
             quality_news = self.curator.filter_news(raw_news, min_score=0)
-
             if not quality_news:
                 logger.warning("No quality news")
                 return
 
             logger.info(f"Curator selected {len(quality_news)} news")
-
-            # Берем только одну новость для публикации
-            best_news = quality_news[:1]  # <-- только одна
+            best_news = quality_news[:1]
 
             logger.info("Stage 3/4: Creating content...")
             posts = await self.editor.process_batch(best_news)
-
             if not posts:
                 logger.warning("No posts generated")
                 return
@@ -63,16 +57,109 @@ class Orchestrator:
             import traceback
             traceback.print_exc()
 
+    async def run_daily_digest(self):
+        """Ежедневный дайджест – публикует один пост с топ-7 новостей за сутки"""
+        try:
+            logger.info("=" * 50)
+            logger.info("Daily Digest started")
+            logger.info("=" * 50)
+
+            logger.info("Stage 1/4: Collecting news...")
+            raw_news = await self.scout.fetch_all_sources()
+            if not raw_news:
+                logger.warning("No news for digest")
+                return
+
+            # Фильтруем новости за последние 24 часа
+            now = datetime.now()
+            day_ago = now - timedelta(hours=24)
+            recent_news = [n for n in raw_news if n.get('published_at') and n['published_at'] > day_ago]
+            if not recent_news:
+                logger.warning("No recent news for digest")
+                return
+
+            logger.info(f"Found {len(recent_news)} news from last 24 hours")
+
+            # Скоринг и отбор лучших (без дедупликации – она уже есть в curator)
+            scored = []
+            for item in recent_news:
+                score = self.curator._calculate_score(item)
+                item['score'] = score
+                scored.append(item)
+            scored.sort(key=lambda x: x['score'], reverse=True)
+            top_news = scored[:7]  # берём топ-7
+
+            logger.info("Stage 2/4: Creating digest...")
+            content = await self.editor.create_digest(top_news)
+            if not content:
+                logger.warning("Digest content empty")
+                return
+
+            post = {"content": content, "news": top_news[0]}  # для сохранения URL (используем первую)
+            logger.info("Stage 3/4: Publishing digest...")
+            await self.publisher.publish(post)
+            logger.success("Daily digest published successfully")
+
+        except Exception as e:
+            logger.error(f"Digest error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    async def run_weekly_analytics(self):
+        """Еженедельная аналитика – публикует один пост с обзором за неделю"""
+        try:
+            logger.info("=" * 50)
+            logger.info("Weekly Analytics started")
+            logger.info("=" * 50)
+
+            logger.info("Stage 1/4: Collecting news...")
+            raw_news = await self.scout.fetch_all_sources()
+            if not raw_news:
+                logger.warning("No news for analytics")
+                return
+
+            # Фильтруем новости за последние 7 дней
+            now = datetime.now()
+            week_ago = now - timedelta(days=7)
+            recent_news = [n for n in raw_news if n.get('published_at') and n['published_at'] > week_ago]
+            if not recent_news:
+                logger.warning("No recent news for analytics")
+                return
+
+            logger.info(f"Found {len(recent_news)} news from last 7 days")
+
+            scored = []
+            for item in recent_news:
+                score = self.curator._calculate_score(item)
+                item['score'] = score
+                scored.append(item)
+            scored.sort(key=lambda x: x['score'], reverse=True)
+            top_news = scored[:10]
+
+            logger.info("Stage 2/4: Creating analytics...")
+            content = await self.editor.create_weekly_analytics(top_news)
+            if not content:
+                logger.warning("Analytics content empty")
+                return
+
+            post = {"content": content, "news": top_news[0] if top_news else {}}
+            logger.info("Stage 3/4: Publishing analytics...")
+            await self.publisher.publish(post)
+            logger.success("Weekly analytics published successfully")
+
+        except Exception as e:
+            logger.error(f"Analytics error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
     async def start(self):
-        """Start orchestrator"""
-        logger.info("AI-Pulse starting...")
-        await self.run_pipeline()
-        logger.info("AI-Pulse finished")
+        logger.info("AI-Pulse orchestrator ready")
+        # Этот метод можно не использовать, мы вызываем конкретные методы из бота
 
 
 async def main():
     orchestrator = Orchestrator()
-    await orchestrator.start()
+    await orchestrator.run_pipeline()
 
 
 if __name__ == "__main__":
