@@ -1,7 +1,7 @@
 ﻿"""Main Orchestrator"""
 import asyncio
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta  # <-- добавлено
 
 from utils.logger import logger
 from agents.scout import ScoutAgent
@@ -68,7 +68,7 @@ class Orchestrator:
             raw_news = await self.scout.fetch_all_sources()
             if not raw_news:
                 logger.warning("No news for digest")
-                return
+                return False  # возвращаем False, чтобы бот знал о неудаче
 
             # Фильтруем новости за последние 24 часа
             now = datetime.now()
@@ -76,7 +76,7 @@ class Orchestrator:
             recent_news = [n for n in raw_news if n.get('published_at') and n['published_at'] > day_ago]
             if not recent_news:
                 logger.warning("No recent news for digest")
-                return
+                return False
 
             logger.info(f"Found {len(recent_news)} news from last 24 hours")
 
@@ -87,23 +87,25 @@ class Orchestrator:
                 item['score'] = score
                 scored.append(item)
             scored.sort(key=lambda x: x['score'], reverse=True)
-            top_news = scored[:7]  # берём топ-7
+            top_news = scored[:7]
 
             logger.info("Stage 2/4: Creating digest...")
             content = await self.editor.create_digest(top_news)
             if not content:
                 logger.warning("Digest content empty")
-                return
+                return False
 
-            post = {"content": content, "news": top_news[0]}  # для сохранения URL (используем первую)
+            post = {"content": content, "news": top_news[0] if top_news else {}}
             logger.info("Stage 3/4: Publishing digest...")
             await self.publisher.publish(post)
             logger.success("Daily digest published successfully")
+            return True
 
         except Exception as e:
             logger.error(f"Digest error: {str(e)}")
             import traceback
             traceback.print_exc()
+            return False
 
     async def run_weekly_analytics(self):
         """Еженедельная аналитика – публикует один пост с обзором за неделю"""
@@ -116,7 +118,7 @@ class Orchestrator:
             raw_news = await self.scout.fetch_all_sources()
             if not raw_news:
                 logger.warning("No news for analytics")
-                return
+                return False
 
             # Фильтруем новости за последние 7 дней
             now = datetime.now()
@@ -124,7 +126,7 @@ class Orchestrator:
             recent_news = [n for n in raw_news if n.get('published_at') and n['published_at'] > week_ago]
             if not recent_news:
                 logger.warning("No recent news for analytics")
-                return
+                return False
 
             logger.info(f"Found {len(recent_news)} news from last 7 days")
 
@@ -140,21 +142,22 @@ class Orchestrator:
             content = await self.editor.create_weekly_analytics(top_news)
             if not content:
                 logger.warning("Analytics content empty")
-                return
+                return False
 
             post = {"content": content, "news": top_news[0] if top_news else {}}
             logger.info("Stage 3/4: Publishing analytics...")
             await self.publisher.publish(post)
             logger.success("Weekly analytics published successfully")
+            return True
 
         except Exception as e:
             logger.error(f"Analytics error: {str(e)}")
             import traceback
             traceback.print_exc()
+            return False
 
     async def start(self):
         logger.info("AI-Pulse orchestrator ready")
-        # Этот метод можно не использовать, мы вызываем конкретные методы из бота
 
 
 async def main():

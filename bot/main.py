@@ -62,35 +62,49 @@ async def ask_groq(prompt: str, system_prompt: str = "Ты — полезный 
     except Exception as e:
         return f"❌ Ошибка при обращении к AI: {str(e)}"
 
-# --- Функции-обёртки для пайплайнов ---
+# --- Функции-обёртки для пайплайнов (возвращают результат) ---
 async def run_pipeline_wrapper():
     start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"🔄 [{start_time}] Запуск обычного пайплайна...")
     try:
         await orchestrator.run_pipeline()
         print(f"✅ [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Пайплайн завершён")
+        return True
     except Exception as e:
         print(f"❌ Ошибка в пайплайне: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 async def run_daily_digest_wrapper():
     print("🔄 Запуск ежедневного дайджеста...")
     try:
-        await orchestrator.run_daily_digest()
+        result = await orchestrator.run_daily_digest()
+        if result:
+            print("✅ Дайджест успешно опубликован")
+        else:
+            print("❌ Дайджест не опубликован (нет новостей или ошибка)")
+        return result
     except Exception as e:
         print(f"❌ Ошибка в дайджесте: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 async def run_weekly_analytics_wrapper():
     print("🔄 Запуск еженедельной аналитики...")
     try:
-        await orchestrator.run_weekly_analytics()
+        result = await orchestrator.run_weekly_analytics()
+        if result:
+            print("✅ Аналитика успешно опубликована")
+        else:
+            print("❌ Аналитика не опубликована (нет новостей или ошибка)")
+        return result
     except Exception as e:
         print(f"❌ Ошибка в аналитике: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 def run_pipeline_sync():
     asyncio.run(run_pipeline_wrapper())
@@ -181,18 +195,27 @@ async def ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def publish_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Запускаю публикацию новости...")
-    await run_pipeline_wrapper()
-    await update.message.reply_text("✅ Публикация завершена! Проверьте канал.")
+    success = await run_pipeline_wrapper()
+    if success:
+        await update.message.reply_text("✅ Публикация завершена! Проверьте канал.")
+    else:
+        await update.message.reply_text("❌ Публикация не удалась. Проверьте логи.")
 
 async def daily_digest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Генерирую ежедневный дайджест...")
-    await run_daily_digest_wrapper()
-    await update.message.reply_text("✅ Дайджест опубликован!")
+    success = await run_daily_digest_wrapper()
+    if success:
+        await update.message.reply_text("✅ Дайджест опубликован!")
+    else:
+        await update.message.reply_text("❌ Дайджест не удалось опубликовать (нет новостей или ошибка).")
 
 async def weekly_analytics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Генерирую еженедельную аналитику...")
-    await run_weekly_analytics_wrapper()
-    await update.message.reply_text("✅ Аналитика опубликована!")
+    success = await run_weekly_analytics_wrapper()
+    if success:
+        await update.message.reply_text("✅ Аналитика опубликована!")
+    else:
+        await update.message.reply_text("❌ Аналитика не удалась (нет новостей или ошибка).")
 
 async def show_published(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'published_urls.json')

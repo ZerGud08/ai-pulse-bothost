@@ -1,6 +1,7 @@
 ﻿"""Editor Agent - creates content using Groq API"""
 import os
 import re
+from datetime import datetime, timedelta  # <-- добавлено
 from groq import Groq
 from dotenv import load_dotenv
 from utils.logger import logger
@@ -83,7 +84,6 @@ class EditorAgent:
         """Создаёт ежедневный дайджест из списка новостей"""
         if not news_list:
             return ""
-        # Формируем список для промпта
         news_text = ""
         for i, news in enumerate(news_list[:7], 1):
             title = news.get('title', 'Без заголовка')
