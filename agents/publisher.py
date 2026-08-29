@@ -1,180 +1,252 @@
-﻿"""Publisher Agent - publishes to Telegram via Bot API with alternating image styles"""
+﻿"""Editor Agent - creates content using Groq API"""
 import os
-import json
-import random
-import requests
+import re
+from datetime import datetime, timedelta
+from groq import Groq
 from dotenv import load_dotenv
 from utils.logger import logger
 
-class PublisherAgent:
+def clean_llm_response(text: str) -> str:
+    """Удаляет технические блоки и HTML-теги, оставляет разделение абзацев"""
+    if not text:
+        return ""
+    # Удаляем <think>...</think>
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    # Удаляем все остальные HTML-теги, но оставляем переносы
+    text = re.sub(r'<[^>]+>', '', text)
+    # Заменяем 3 и более переносов на 2 (чтобы избежать слишком больших отступов)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+class EditorAgent:
     def __init__(self):
         load_dotenv()
-        self.bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-        self.channel_username = os.getenv("CHANNEL_USERNAME", "ai_pulse_ai")
-        self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
-        self.published_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'published_urls.json')
-        self.counter_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'style_counter.json')
-        logger.info(f"Publisher: файл опубликованных URL: {self.published_file}")
+        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        logger.info("Editor initialized (Groq)")
 
-        # Списки для уникализации промптов
-        self.color_palettes = [
-            "neon blue and purple", "warm orange and gold", "cool teal and cyan",
-            "vibrant magenta and yellow", "electric green and blue", "deep red and black",
-            "pastel pink and lavender", "metallic silver and blue"
-        ]
-        self.art_styles = [
-            "futuristic digital art", "cyberpunk style", "minimalist tech illustration",
-            "abstract geometric", "sci-fi concept art", "glowing neon lines",
-            "modern flat design", "3D rendering with glowing effects"
-        ]
-        self.artists = [
-            "inspired by Syd Mead", "inspired by Beeple", "inspired by Zaha Hadid",
-            "in the style of Bauhaus", "inspired by cyberpunk aesthetics"
-        ]
+    async def create_short_news(self, news: dict) -> str:
+        """Generate short news post (200-400 chars) with HTML formatting and paragraph breaks"""
+        prompt = f"""
+Ты — опытный редактор Telegram-канала "AI-Pulse". 
+Пиши для IT-специалистов, разработчиков и предпринимателей. 
+Стиль: дружелюбный, экспертный, без воды, фокус на практическую пользу.
 
-    def _load_published_urls(self):
-        if os.path.exists(self.published_file):
-            try:
-                with open(self.published_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except:
-                return []
-        return []
+ВАЖНО: Разделяй абзацы пустой строкой (два переноса) для читаемости.
+Заголовок всегда в <b>...</b>.
+Вывод начинай с 💡 и новой строки.
 
-    def _save_published_urls(self, urls):
-        os.makedirs(os.path.dirname(self.published_file), exist_ok=True)
-        with open(self.published_file, 'w', encoding='utf-8') as f:
-            json.dump(urls, f, ensure_ascii=False, indent=2)
-        logger.info(f"Publisher: сохранено {len(urls)} URL в файл")
+СОЗДАЙ КОРОТКИЙ ПОСТ (200–400 символов) НА РУССКОМ ЯЗЫКЕ.
 
-    def _add_published_url(self, url):
-        if not url:
-            return
-        urls = self._load_published_urls()
-        if url not in urls:
-            urls.append(url)
-            self._save_published_urls(urls)
-            logger.info(f"Publisher: URL сохранён: {url}")
+НОВОСТЬ:
+Заголовок: {news.get('title', '')}
+Текст: {news.get('summary', '')}
+Источник: {news.get('url', '')}
 
-    def _get_style_counter(self):
-        if os.path.exists(self.counter_file):
-            try:
-                with open(self.counter_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    return data.get('counter', 0)
-            except:
-                return 0
-        return 0
+СТРУКТУРА ПОСТА:
+1. ЗАГОЛОВОК — до 70 символов, в <b>...</b>.
+2. 2–3 предложения сути.
+3. ПРАКТИЧЕСКИЙ ВЫВОД — начни с 💡 и новой строки.
+4. В конце укажи источник (ссылку) и добавь 2–3 хештега.
 
-    def _save_style_counter(self, counter):
-        os.makedirs(os.path.dirname(self.counter_file), exist_ok=True)
-        with open(self.counter_file, 'w', encoding='utf-8') as f:
-            json.dump({'counter': counter}, f, ensure_ascii=False, indent=2)
-        logger.info(f"Publisher: счётчик стилей обновлён: {counter}")
+ПРИМЕР ФОРМАТА (с пустыми строками):
+🔥 <b>OpenAI выпустила GPT-4.1 — быстрее и дешевле</b>
 
-    def _generate_image_prompt(self, news_title: str, news_summary: str) -> str:
-        """Генерирует уникальный промпт для Pollinations.ai с модификаторами"""
-        # Берём первые 40 символов заголовка + первые 30 символов текста (без лишних символов)
-        title_part = news_title[:40].strip()
-        summary_part = news_summary[:50].strip()
-        # Если текст короткий, используем его полностью
-        if len(summary_part) < 10:
-            summary_part = "technology concept"
+Новая модель на 40% быстрее и стоит в 2 раза меньше предыдущей. Уже доступна в API.
 
-        # Случайные выборки из списков
-        color = random.choice(self.color_palettes)
-        style = random.choice(self.art_styles)
-        artist = random.choice(self.artists)
-        seed = random.randint(1000, 9999)
+💡 Разработчикам: обновите интеграции — это снизит ваши расходы на инфраструктуру.
 
-        # Формируем промпт
-        prompt = (
-            f"Abstract illustration, {style}, {color}, "
-            f"representing '{title_part}' concept, "
-            f"featuring {summary_part}, {artist}, "
-            f"futuristic, high detail, 4k, no text"
+🔗 Источник: openai.com/blog/gpt-4-1
+
+#OpenAI #GPT4 #AI
+
+ОТВЕТЬ ТОЛЬКО ГОТОВЫМ ПОСТОМ, БЕЗ РАССУЖДЕНИЙ.
+"""
+        response = self.client.chat.completions.create(
+            model="qwen/qwen3.8-27b",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=500,
         )
-        logger.info(f"Сгенерирован промпт для картинки: {prompt[:120]}...")
-        return prompt
+        raw = response.choices[0].message.content
+        return clean_llm_response(raw)
 
-    async def publish(self, post: dict) -> bool:
-        content = post.get("content", "")
-        if not content:
-            logger.error("Empty content, nothing to publish")
-            return False
+    async def create_article(self, news: dict) -> str:
+        """Generate detailed article (800-1500 chars) with HTML formatting and paragraph breaks"""
+        prompt = f"""
+Ты — главный аналитик канала "AI-Pulse". 
+Твоя аудитория — умные, занятые люди, которые хотят быстро понять суть и извлечь пользу.
 
-        news = post.get("news", {})
-        title = news.get('title', '')
-        summary = news.get('summary', '')
+ВАЖНО: Разделяй абзацы пустой строкой (два переноса) для читаемости.
+Заголовок всегда в <b>...</b>.
+Вывод начинай с 💡 и новой строки.
 
-        counter = self._get_style_counter()
-        use_ai_image = (counter % 2 == 1)
-        logger.info(f"Стиль публикации: {'AI-картинка' if use_ai_image else 'превью из статьи'} (счётчик={counter})")
+СОЗДАЙ РАЗВЁРНУТЫЙ ПОСТ (800–1500 символов) НА РУССКОМ ЯЗЫКЕ.
 
-        chat_id = f"@{self.channel_username}"
+НОВОСТЬ:
+Заголовок: {news.get('title', '')}
+Текст: {news.get('summary', '')}
+Источник: {news.get('url', '')}
 
-        if use_ai_image:
-            try:
-                image_prompt = self._generate_image_prompt(title, summary)
-                encoded_prompt = image_prompt.replace(' ', '%20')
-                # Добавляем seed и параметры для уникальности
-                image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=512&nologo=true&seed={random.randint(1000, 9999)}"
-                logger.info(f"Запрос картинки (seed): {image_url[:120]}...")
+СТРУКТУРА ПОСТА:
+1. 🔥 ЗАГОЛОВОК в <b>...</b>.
+2. ЛИД — 1–2 предложения.
+3. ОСНОВНАЯ ЧАСТЬ (2–3 абзаца, разделённые пустыми строками):
+   - Что произошло?
+   - Технические детали (если есть).
+   - Почему это важно?
+4. 💡 ПРАКТИЧЕСКИЙ ВЫВОД (новая строка, начинается с 💡).
+5. 🤔 Мнение AI-Pulse.
+6. 🔗 Источник.
+7. #хештеги.
 
-                response = requests.get(image_url, timeout=30)
-                if response.status_code == 200:
-                    files = {'photo': ('cover.jpg', response.content)}
-                    data = {
-                        'chat_id': chat_id,
-                        'caption': content,
-                        'parse_mode': 'HTML',
-                        'disable_web_page_preview': True
-                    }
-                    result = requests.post(f"{self.base_url}/sendPhoto", files=files, data=data)
-                    result_json = result.json()
-                    if result_json.get('ok'):
-                        logger.success(f"Published with AI image to {chat_id}: {content[:80]}...")
-                        if news.get('url'):
-                            self._add_published_url(news['url'])
-                        self._save_style_counter(counter + 1)
-                        return True
-                    else:
-                        logger.error(f"Error sending photo: {result_json}")
-                        return await self._send_text_message(chat_id, content, news)
-                else:
-                    logger.error(f"Pollinations.ai error: {response.status_code}")
-                    return await self._send_text_message(chat_id, content, news)
-            except Exception as e:
-                logger.error(f"Exception during AI image generation: {e}")
-                return await self._send_text_message(chat_id, content, news)
-        else:
-            success = await self._send_text_message(chat_id, content, news)
-            if success:
-                self._save_style_counter(counter + 1)
-            return success
+ПРИМЕР ФОРМАТА (с пустыми строками):
+🔥 <b>Google представила Gemini 2.0 — мультимодальную модель нового поколения</b>
 
-    async def _send_text_message(self, chat_id: str, content: str, news: dict) -> bool:
-        try:
-            data = {
-                "chat_id": chat_id,
-                "text": content,
-                "parse_mode": "HTML",
-                "link_preview_options": {
-                    "prefer_large_media": True,
-                    "prefer_small_media": False,
-                    "show_above_text": False
-                }
-            }
-            response = requests.post(f"{self.base_url}/sendMessage", json=data, timeout=30)
-            result = response.json()
-            if result.get("ok"):
-                logger.success(f"Published text to {chat_id}: {content[:80]}...")
-                if news.get('url'):
-                    self._add_published_url(news['url'])
-                return True
+Вчера Google анонсировала Gemini 2.0, которая понимает текст, видео и аудио одновременно. Это первый шаг к ИИ-агентам, которые могут действовать в реальном мире.
+
+Модель уже доступна в ограниченном доступе. Ключевые улучшения: улучшенное понимание контекста, мультимодальность и низкая задержка.
+
+Для индустрии это означает переход к более естественному взаимодействию с ИИ.
+
+💡 Для разработчиков открываются новые возможности: создание приложений, которые одновременно работают с текстом, звуком и видео.
+
+🤔 Наш комментарий: Gemini 2.0 — это не просто очередная модель, а смена парадигмы.
+
+🔗 Источник: blog.google/gemini2
+
+#Google #Gemini #AI #Мультимодальность
+
+ОТВЕТЬ ТОЛЬКО ГОТОВЫМ ПОСТОМ, БЕЗ РАССУЖДЕНИЙ.
+"""
+        response = self.client.chat.completions.create(
+            model="qwen/qwen3.8-27b",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.8,
+            max_tokens=1200,
+        )
+        raw = response.choices[0].message.content
+        return clean_llm_response(raw)
+
+    async def create_digest(self, news_list: list) -> str:
+        """Создаёт ежедневный дайджест с чёткой структурой и разделением абзацев"""
+        if not news_list:
+            return ""
+        news_text = ""
+        for i, news in enumerate(news_list[:7], 1):
+            title = news.get('title', 'Без заголовка')
+            url = news.get('url', '')
+            summary = news.get('summary', '')[:150]
+            news_text += f"{i}. {title}\n   {summary}...\n   {url}\n\n"
+
+        prompt = f"""
+Ты — главный редактор канала "AI-Pulse". Создай ежедневный дайджест на русском языке.
+
+ВАЖНО: Разделяй смысловые блоки пустой строкой (два переноса) для читаемости.
+Используй HTML-теги для жирного (<b>...</b>) в заголовках.
+
+НОВОСТИ ЗА ДЕНЬ (топ-7):
+{news_text}
+
+СТРУКТУРА ДАЙДЖЕСТА:
+📊 <b>AI-Pulse Daily Digest | {datetime.now().strftime('%d.%m.%Y')}</b>
+
+🔥 Главные события дня:
+1. [Краткое описание + ссылка]
+2. [Краткое описание + ссылка]
+3. [Краткое описание + ссылка]
+
+⚡ Также важно:
+• [Новость]
+• [Новость]
+
+🛠 Инструменты:
+• [Инструмент с описанием] (если есть)
+
+💡 Тренд дня: [1-2 предложения]
+
+📈 Цифра дня: [интересная статистика]
+
+ОТВЕТЬ ТОЛЬКО ГОТОВЫМ ПОСТОМ.
+"""
+        response = self.client.chat.completions.create(
+            model="qwen/qwen3.8-27b",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=1000,
+        )
+        raw = response.choices[0].message.content
+        return clean_llm_response(raw)
+
+    async def create_weekly_analytics(self, news_list: list) -> str:
+        """Создаёт еженедельный аналитический обзор с разделением абзацев"""
+        if not news_list:
+            return ""
+        news_text = ""
+        for i, news in enumerate(news_list[:10], 1):
+            title = news.get('title', 'Без заголовка')
+            url = news.get('url', '')
+            summary = news.get('summary', '')[:150]
+            news_text += f"{i}. {title}\n   {summary}...\n   {url}\n\n"
+
+        prompt = f"""
+Ты — главный аналитик канала "AI-Pulse". Подготовь еженедельный обзор трендов на русском языке.
+
+ВАЖНО: Разделяй смысловые блоки пустой строкой (два переноса) для читаемости.
+Используй HTML-теги для жирного (<b>...</b>) в заголовках.
+
+НОВОСТИ ЗА НЕДЕЛЮ (топ-10):
+{news_text}
+
+СТРУКТУРА ОБЗОРА:
+🎯 <b>AI-Тренды недели ({datetime.now().strftime('%d.%m')} – {(datetime.now() + timedelta(days=7)).strftime('%d.%m')})</b>
+
+📈 Главный тренд: [название и описание в 2-3 предложения]
+
+🔥 Что произошло:
+1. [Событие] — [значимость]
+2. [Событие] — [значимость]
+3. [Событие] — [значимость]
+
+💼 Бизнес-импакт: [как это влияет на индустрию]
+
+👨‍💻 Для разработчиков: [что нужно знать]
+
+🔮 Прогноз на следующую неделю: [1-2 предложения]
+
+ОТВЕТЬ ТОЛЬКО ГОТОВЫМ ПОСТОМ.
+"""
+        response = self.client.chat.completions.create(
+            model="qwen/qwen3.8-27b",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.8,
+            max_tokens=1500,
+        )
+        raw = response.choices[0].message.content
+        return clean_llm_response(raw)
+
+    async def process_batch(self, news_list: list) -> list:
+        """Обрабатывает список новостей, генерируя посты"""
+        posts = []
+        for news in news_list:
+            score = news.get("score", 0)
+            if score >= 80:
+                content = await self.create_article(news)
+                format_type = "article"
             else:
-                logger.error(f"Telegram API error: {result}")
-                return False
-        except Exception as e:
-            logger.error(f"Failed to send text: {e}")
-            return False
+                content = await self.create_short_news(news)
+                format_type = "news"
+
+            if not content or content.strip() == "":
+                title = news.get('title', 'Новость')
+                summary = news.get('summary', '')[:300]
+                url = news.get('url', '')
+                content = f"<b>{title}</b>\n\n{summary}\n\n💡 {title}\n\n🔗 {url}\n\n#AI #Нейросети"
+                logger.warning(f"Used fallback for article: {title}")
+
+            posts.append({
+                "news": news,
+                "content": content,
+                "format": format_type,
+            })
+        logger.info(f"Editor: created {len(posts)} posts")
+        return posts
