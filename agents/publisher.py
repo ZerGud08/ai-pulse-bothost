@@ -16,19 +16,40 @@ class PublisherAgent:
         self.counter_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'style_counter.json')
         logger.info(f"Publisher: файл опубликованных URL: {self.published_file}")
 
+        # --- Расширенные списки для уникализации картинок ---
         self.color_palettes = [
             "neon blue and purple", "warm orange and gold", "cool teal and cyan",
             "vibrant magenta and yellow", "electric green and blue", "deep red and black",
-            "pastel pink and lavender", "metallic silver and blue"
+            "pastel pink and lavender", "metallic silver and blue", "crimson and gold",
+            "emerald and white", "amber and charcoal", "violet and magenta"
         ]
         self.art_styles = [
             "futuristic digital art", "cyberpunk style", "minimalist tech illustration",
             "abstract geometric", "sci-fi concept art", "glowing neon lines",
-            "modern flat design", "3D rendering with glowing effects"
+            "modern flat design", "3D rendering with glowing effects", "watercolor",
+            "oil painting", "sketch", "pixel art", "low poly", "isometric"
         ]
         self.artists = [
             "inspired by Syd Mead", "inspired by Beeple", "inspired by Zaha Hadid",
-            "in the style of Bauhaus", "inspired by cyberpunk aesthetics"
+            "in the style of Bauhaus", "inspired by cyberpunk aesthetics",
+            "inspired by Frank Gehry", "inspired by H.R. Giger", "in the style of Mondrian"
+        ]
+        self.times_of_day = [
+            "morning light", "sunset glow", "night with stars", "overcast day",
+            "golden hour", "blue hour", "stormy sky"
+        ]
+        self.weather = [
+            "clear sky", "foggy atmosphere", "rainy mood", "misty",
+            "sunny", "cloudy", "partly cloudy"
+        ]
+        self.view_angles = [
+            "aerial view", "close-up detail", "wide shot", "low angle",
+            "high angle", "isometric perspective", "birds-eye view"
+        ]
+        self.concept_words = [
+            "quantum", "crystal", "cyber", "neon", "digital", "neural",
+            "crystal", "liquid", "light", "shadow", "structure", "flow",
+            "pattern", "network", "sphere", "cube", "wave", "particle"
         ]
 
     def _load_published_urls(self):
@@ -72,29 +93,64 @@ class PublisherAgent:
         logger.info(f"Publisher: счётчик стилей обновлён: {counter}")
 
     def _generate_image_prompt(self, news_title: str, news_summary: str) -> str:
+        """Генерирует уникальный промпт с расширенными модификаторами"""
+        # Базовые части
         title_part = news_title[:40].strip()
         summary_part = news_summary[:50].strip()
         if len(summary_part) < 10:
             summary_part = "technology concept"
 
+        # Случайные выборки из расширенных списков
         color = random.choice(self.color_palettes)
         style = random.choice(self.art_styles)
         artist = random.choice(self.artists)
+        time = random.choice(self.times_of_day)
+        weather = random.choice(self.weather)
+        angle = random.choice(self.view_angles)
+        concept = random.choice(self.concept_words)
+        # Случайное число для дополнительного seed
+        seed = random.randint(1000, 9999)
 
         prompt = (
             f"Abstract illustration, {style}, {color}, "
             f"representing '{title_part}' concept, "
             f"featuring {summary_part}, {artist}, "
+            f"{time}, {weather}, {angle}, "
+            f"with {concept} elements, "
             f"futuristic, high detail, 4k, no text"
         )
-        logger.info(f"Сгенерирован промпт для картинки: {prompt[:120]}...")
-        return prompt
+        logger.info(f"Сгенерирован промпт для картинки (seed={seed}): {prompt[:120]}...")
+        return prompt, seed
+
+    def _ensure_bold_title(self, content: str) -> str:
+        """Если первая строка не содержит <b>, оборачивает её в тег."""
+        lines = content.split('\n')
+        if lines and '<b>' not in lines[0]:
+            # Убираем возможные эмодзи в начале строки, чтобы не испортить
+            # Обёртываем только текст, оставляя эмодзи
+            import re
+            # Ищем эмодзи в начале строки (например, 🏥, 🔥, и т.д.)
+            emoji_pattern = re.compile(r'^([\u2600-\u27BF]|[\u{1F300}-\u{1F6FF}]|[\u{1F900}-\u{1F9FF}]|[🔴-🟣📊📈💡🤖🎯🛠📚⚡💼👨‍💻🔮])\s*')
+            match = emoji_pattern.match(lines[0])
+            if match:
+                # Если есть эмодзи, оборачиваем оставшийся текст
+                emoji = match.group(0)
+                rest = lines[0][len(emoji):]
+                lines[0] = f"{emoji}<b>{rest}</b>"
+            else:
+                # Если эмодзи нет, оборачиваем всю строку
+                lines[0] = f"<b>{lines[0]}</b>"
+            logger.info(f"Publisher: добавлен жирный заголовок: {lines[0][:50]}...")
+        return '\n'.join(lines)
 
     async def publish(self, post: dict) -> bool:
         content = post.get("content", "")
         if not content:
             logger.error("Empty content, nothing to publish")
             return False
+
+        # Применяем постобработку для жирного заголовка
+        content = self._ensure_bold_title(content)
 
         news = post.get("news", {})
         title = news.get('title', '')
@@ -108,10 +164,10 @@ class PublisherAgent:
 
         if use_ai_image:
             try:
-                image_prompt = self._generate_image_prompt(title, summary)
-                encoded_prompt = image_prompt.replace(' ', '%20')
-                image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=512&nologo=true&seed={random.randint(1000, 9999)}"
-                logger.info(f"Запрос картинки (seed): {image_url[:120]}...")
+                prompt, seed = self._generate_image_prompt(title, summary)
+                encoded_prompt = prompt.replace(' ', '%20')
+                image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=512&nologo=true&seed={seed}"
+                logger.info(f"Запрос картинки (seed={seed}): {image_url[:120]}...")
 
                 response = requests.get(image_url, timeout=30)
                 if response.status_code == 200:
@@ -146,6 +202,10 @@ class PublisherAgent:
             return success
 
     async def _send_text_message(self, chat_id: str, content: str, news: dict) -> bool:
+        """Отправляет текстовое сообщение с постобработкой заголовка"""
+        # Применяем постобработку и для текстовых сообщений (на случай, если publish вызван напрямую)
+        content = self._ensure_bold_title(content)
+
         try:
             data = {
                 "chat_id": chat_id,
