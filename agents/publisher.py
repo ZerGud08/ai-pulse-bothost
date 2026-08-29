@@ -92,15 +92,13 @@ class PublisherAgent:
             json.dump({'counter': counter}, f, ensure_ascii=False, indent=2)
         logger.info(f"Publisher: счётчик стилей обновлён: {counter}")
 
-    def _generate_image_prompt(self, news_title: str, news_summary: str) -> str:
+    def _generate_image_prompt(self, news_title: str, news_summary: str) -> tuple:
         """Генерирует уникальный промпт с расширенными модификаторами"""
-        # Базовые части
         title_part = news_title[:40].strip()
         summary_part = news_summary[:50].strip()
         if len(summary_part) < 10:
             summary_part = "technology concept"
 
-        # Случайные выборки из расширенных списков
         color = random.choice(self.color_palettes)
         style = random.choice(self.art_styles)
         artist = random.choice(self.artists)
@@ -108,7 +106,6 @@ class PublisherAgent:
         weather = random.choice(self.weather)
         angle = random.choice(self.view_angles)
         concept = random.choice(self.concept_words)
-        # Случайное число для дополнительного seed
         seed = random.randint(1000, 9999)
 
         prompt = (
@@ -124,22 +121,12 @@ class PublisherAgent:
 
     def _ensure_bold_title(self, content: str) -> str:
         """Если первая строка не содержит <b>, оборачивает её в тег."""
+        if not content:
+            return content
         lines = content.split('\n')
         if lines and '<b>' not in lines[0]:
-            # Убираем возможные эмодзи в начале строки, чтобы не испортить
-            # Обёртываем только текст, оставляя эмодзи
-            import re
-            # Ищем эмодзи в начале строки (например, 🏥, 🔥, и т.д.)
-            emoji_pattern = re.compile(r'^([\u2600-\u27BF]|[\u{1F300}-\u{1F6FF}]|[\u{1F900}-\u{1F9FF}]|[🔴-🟣📊📈💡🤖🎯🛠📚⚡💼👨‍💻🔮])\s*')
-            match = emoji_pattern.match(lines[0])
-            if match:
-                # Если есть эмодзи, оборачиваем оставшийся текст
-                emoji = match.group(0)
-                rest = lines[0][len(emoji):]
-                lines[0] = f"{emoji}<b>{rest}</b>"
-            else:
-                # Если эмодзи нет, оборачиваем всю строку
-                lines[0] = f"<b>{lines[0]}</b>"
+            # Обёртываем первую строку в <b>, даже если там есть эмодзи – это безопасно
+            lines[0] = f"<b>{lines[0]}</b>"
             logger.info(f"Publisher: добавлен жирный заголовок: {lines[0][:50]}...")
         return '\n'.join(lines)
 
@@ -203,7 +190,7 @@ class PublisherAgent:
 
     async def _send_text_message(self, chat_id: str, content: str, news: dict) -> bool:
         """Отправляет текстовое сообщение с постобработкой заголовка"""
-        # Применяем постобработку и для текстовых сообщений (на случай, если publish вызван напрямую)
+        # Применяем постобработку и для текстовых сообщений
         content = self._ensure_bold_title(content)
 
         try:
